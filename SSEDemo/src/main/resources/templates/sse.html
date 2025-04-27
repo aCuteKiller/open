@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSE Client</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.js"></script>
+</head>
+<body>
+<h1>个人账号: <input type="text" id="username">
+    <button id="register">注册</button>
+</h1>
+<h1>发送消息:
+    <input type="text" id="message" placeholder="请输入消息">
+    <input type="text" id="toUserId" placeholder="请输入接收用户ID">
+    <button id="send">发送</button>
+</h1>
+<h1>消息列表:</h1>
+<div id="messageList"></div>
+<script>
+    $(function () {
+        let eventSource = null;
+
+        // 注册用户
+        $('#register').click(() => {
+            const userId = $('#username').val();
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            eventSource = new EventSource(`/sse/connect?userId=${userId}`);
+            $('#messageList').append(`<p>链接成功</p>`);
+
+            // 接收服务器消息
+            eventSource.onmessage = (e) => {
+                console.log("收到消息:", e.data);
+                const data = JSON.parse(e.data);
+                $('#messageList').append(`<p>${data.sender} 发来： ${data.message}</p>`);
+            };
+
+            // 连接关闭处理
+            eventSource.onerror = () => {
+                $('#messageList').append(`<p>SSE连接断开</p>`);
+                eventSource.close();
+            };
+        })
+
+        // 发送消息
+        $('#send').click(() => {
+            const message = $('#message').val();
+            const toUserId = $('#toUserId').val();
+            $.ajax({
+                url: `/sse/send?userId=${toUserId}&message=${message}`,
+                method: 'POST',
+                success: function (data) {
+                    console.log(data);
+                    $('#messageList').append(`<p>成功发送 (${message}) 给 ${toUserId}</p>`);
+                }
+            });
+        })
+    })
+</script>
+</body>
+</html>
