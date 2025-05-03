@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FileUploadDemo</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.6.0/jquery.js"></script>
+
+    <style>
+        .upload-file-box {
+            display: flex;
+            flex-direction: column;
+            margin: 0 auto;
+
+            .row {
+                display: flex;
+                gap: 20px;
+                align-items: center;
+                padding: 10px;
+
+                .type {
+                    width: 150px;
+                    font-size: 20px;
+                    font-weight: bold;
+                }
+
+                &:not(:first-child) {
+                    border-top: solid 1px #ccc;
+                }
+            }
+        }
+    </style>
+
+</head>
+<body>
+<div class="upload-file-box">
+    <div class="row">
+        <span class="type">单文件上传</span>
+        <form class="single-upload" action="/upload/single" method="post" enctype="multipart/form-data">
+            <label for="single-upload-file">选择要上传的文件：</label>
+            <input type="file" id="single-upload-file" name="file">
+            <button type="submit">上传</button>
+        </form>
+    </div>
+    <div class="row">
+        <span class="type">多文件上传</span>
+        <form class="list-upload" action="/upload/list" method="post" enctype="multipart/form-data">
+            <label for="list-upload-file">选择要上传的文件：</label>
+            <input type="file" id="list-upload-file" name="files" multiple="multiple">
+            <button type="submit">上传</button>
+        </form>
+    </div>
+    <div class="row">
+        <span class="type">分片文件上传</span>
+        <form class="chunk-upload" action="/upload/chunk/in" method="post" enctype="multipart/form-data">
+            <label for="chunk-upload-file">选择要上传的文件：</label>
+            <input type="file" id="chunk-upload-file" name="file">
+            <button type="submit">上传</button>
+        </form>
+    </div>
+</div>
+<script>
+    $(function () {
+        $('.single-upload').submit(function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            $.ajax({
+                url: $(this).attr('action'),
+                type: $(this).attr('method'),
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (data) {
+                    console.log(data);
+                }
+            });
+        });
+
+        $('.list-upload').submit(function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            $.ajax({
+                url: $(this).attr('action'),
+                type: $(this).attr('method'),
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (data) {
+                    console.log(data);
+                }
+            });
+        });
+
+        // 分片大小
+        const CHUNK_SIZE = 1024 * 512;
+
+        // 上传分片
+        function uploadChunk(chunkSize, fileHash, file, ignoreChunk) {
+            for (let i = 0; i < chunkSize; i++) {
+                if (ignoreChunk.includes(i)) {
+                    continue;
+                }
+
+                // 模拟端点
+                // if (i >= 50) return;
+                console.log(i)
+
+                const start = i * CHUNK_SIZE;
+                const end = Math.min(start + CHUNK_SIZE, file.size);
+                const chunk = file.slice(start, end);
+                const formData = new FormData();
+                formData.set('file', chunk);
+                formData.set('chunkNumber', i.toString());
+                formData.set('chunkSize', chunkSize.toString());
+                formData.set('fileHash', fileHash);
+                $.ajax({
+                    url: "/upload/chunk/in",
+                    type: "post",
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function (data) {
+                        console.log(data);
+                        if (i === chunkSize - 1) {
+                            $.ajax({
+                                url: "/upload/chunk/merge",
+                                type: "POST",
+                                data: {
+                                    fileHash: fileHash,
+                                    chunkSize: chunkSize,
+                                    fileName: file.name
+                                },
+                                success: function (data) {
+                                    console.log("文件已上传完成");
+                                }
+                            })
+                        }
+                    }
+                })
+            }
+        }
+
+        $('.chunk-upload').submit(function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            let file = formData.get('file');
+            // 计算总分片数
+            const chunkSize = Math.ceil(file.size / CHUNK_SIZE);
+            calculateFileHash(file).then(fileHash => {
+                // 获取原先上传进度
+                $.ajax({
+                    url: "/upload/chunk/progress",
+                    type: "GET",
+                    data: {
+                        fileHash: fileHash
+                    },
+                    success: function (res) {
+                        console.log(res);
+                        if ([200, "200"].includes(res.code)) {
+                            if (res.data.chunkPaths.length === chunkSize)
+                                console.log("文件已上传完成");
+                            uploadChunk(chunkSize, fileHash, file, res.data.chunkPaths);
+                        } else {
+                            uploadChunk(chunkSize, fileHash, file, []);
+                        }
+                    }
+                })
+            });
+        });
+
+    })
+
+    // 计算文件哈希(使用Web Crypto API)
+    async function calculateFileHash(file) {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+</script>
+</body>
+</html>
